@@ -112,7 +112,7 @@ public class ClientWithSecurityCP2{
 	}
 	public static void main(String[] args) {
 
-    	String filename = "Homework Set 6.pdf";
+    	String filename = "100000.txt";
     	if (args.length > 0) filename = args[0];
 
     	String serverAddress = "localhost";
@@ -198,8 +198,8 @@ public class ClientWithSecurityCP2{
 				fileEnded = numBytes < 128;
 				Thread.sleep(1);
 				toServer.writeInt(1);
-				System.out.println("this numBytes: " + numBytes);
-				System.out.println("this encryptedBlock.length: " + encryptedBlock.length);
+				//System.out.println("this numBytes: " + numBytes);
+				//System.out.println("this encryptedBlock.length: " + encryptedBlock.length);
 
 				toServer.writeInt(numBytes);
 				toServer.write(encryptedBlock);
@@ -210,7 +210,7 @@ public class ClientWithSecurityCP2{
 			Thread.sleep(100);
 	        bufferedFileInputStream.close();
 	        fileInputStream.close();
-
+			
 			System.out.println("Closing connection... counter is: " + counter);
 
 
