@@ -2,6 +2,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -111,19 +112,12 @@ public class ClientWithSecurityCP2{
 
 	}
 	public static void main(String[] args) {
-
-    	String filename = "100000.txt";
-    	if (args.length > 0) filename = args[0];
-
-    	String serverAddress = "localhost";
-    	if (args.length > 1) filename = args[1];
-
+		int counter = args.length;
+		String serverAddress = "localhost";
+		String filename = null;
     	int port = 4321;
-    	if (args.length > 2) port = Integer.parseInt(args[2]);
-
 		int numBytes = 0;
 		Socket clientSocket = null;
-
         DataOutputStream toServer = null;
         DataInputStream fromServer = null;
 
@@ -155,13 +149,14 @@ public class ClientWithSecurityCP2{
 			//Handshake Protocol
 			handshake(toServer, fromServer, CAcert);
 
-			// setting up AES symmetric key
+			// LOOKHERE: Generate symmetric key
 			KeyGenerator keyGen = KeyGenerator.getInstance("AES");
 			keyGen.init(128);
 			SecretKey AESkey = keyGen.generateKey();
 			//Encrypt encodedKey
 			Cipher rsaCipher = Cipher.getInstance("RSA");
 			rsaCipher.init(Cipher.ENCRYPT_MODE, pubkey);
+			//LOOKHERE : Send symmetric key to server (encrypted with server’s public key):
 			byte[] encryptedBlock = rsaCipher.doFinal(AESkey.getEncoded());
 			//Sending AES key
 			System.out.println("Sending AES key...");
@@ -171,52 +166,68 @@ public class ClientWithSecurityCP2{
 			System.out.println("Sent AES key");
 			System.out.println("this is AESkey: " + new String(AESkey.getEncoded()));
 			// Connect to server
-			System.out.println("Sending file...");
 
+			// send number of files
+			toServer.writeInt(1234);
+			toServer.writeInt(counter);
 
 			// Encrypt file with symmetric key
 			Cipher AESCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+			
+			System.out.println("sending files...");
 			AESCipher.init(Cipher.ENCRYPT_MODE, AESkey);
-			encryptedBlock = AESCipher.doFinal(filename.getBytes());
-			//send encryptedBlock to SecServer
-			toServer.writeInt(0);
-			toServer.writeInt(encryptedBlock.length);
-			toServer.write(encryptedBlock);
-			//toServer.flush();
-
-			// Open the file
-			fileInputStream = new FileInputStream(filename);
-			bufferedFileInputStream = new BufferedInputStream(fileInputStream);
-
-	        byte [] fromFileBuffer = new byte[128];
-			// Send the file
-			int counter = 0;
-	        for (boolean fileEnded = false; !fileEnded;) {
-				//encrypt the file in blocks of 128 bytes
-				numBytes = bufferedFileInputStream.read(fromFileBuffer);
-				encryptedBlock = AESCipher.doFinal(fromFileBuffer);
-				fileEnded = numBytes < 128;
-				Thread.sleep(1);
-				toServer.writeInt(1);
-				//System.out.println("this numBytes: " + numBytes);
-				//System.out.println("this encryptedBlock.length: " + encryptedBlock.length);
-
-				toServer.writeInt(numBytes);
+			for (int i = 0; i < counter; i++) {
+				filename = args[i];
+				encryptedBlock = AESCipher.doFinal(filename.getBytes());
+				//send encryptedBlock to SecServer
+				toServer.writeInt(0);
+				toServer.writeInt(encryptedBlock.length);
 				toServer.write(encryptedBlock);
-				counter++;
-			 	//toServer.flush();
+				//toServer.flush();
+				// Open the file
+				fileInputStream = new FileInputStream(filename);
+				bufferedFileInputStream = new BufferedInputStream(fileInputStream);
+
+				byte [] fromFileBuffer = new byte[128];
+				// Send the file
+				
+				for (boolean fileEnded = false; !fileEnded;) {
+					//encrypt the file in blocks of 128 bytes
+					numBytes = bufferedFileInputStream.read(fromFileBuffer);
+					// LOOKHERE: Encrypt file chunk with symmetric key
+					encryptedBlock = AESCipher.doFinal(fromFileBuffer);
+					fileEnded = numBytes < 128;
+					toServer.writeInt(1);
+					toServer.writeInt(numBytes);
+					toServer.write(encryptedBlock);
+					//toServer.flush();
+		
+				}
+				bufferedFileInputStream.close();
+				fileInputStream.close();
 	
 			}
-			Thread.sleep(100);
-	        bufferedFileInputStream.close();
-	        fileInputStream.close();
 			
-			System.out.println("Closing connection... counter is: " + counter);
+			System.out.println("Done transferring all files");
+			
 
-
+			try{
+				while (true){
+					int packetType = fromServer.readInt();
+					if (packetType == 4){
+						System.out.println("Closing connection...");
+						//clientSocket.close();
+						break;
+					}
+				}
+			}catch(EOFException e){
+				System.out.println("Closing connection...");
+			}
+		
+			long timeTaken = System.nanoTime() - timeStarted;
+			System.out.println("Program took: " + timeTaken/1000000.0 + "ms to run");
+	
 		} catch (Exception e) {e.printStackTrace();}
 
-		long timeTaken = System.nanoTime() - timeStarted;
-		System.out.println("Program took: " + timeTaken/1000000.0 + "ms to run");
 	}
 }

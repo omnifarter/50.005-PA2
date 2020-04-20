@@ -37,9 +37,11 @@ public class ServerWithSecurityCP2 {
 
 
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws Exception {
+		Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding"); 
+		byte[] decryptedBlock = null;
 		int count = 0;
-
+		int done = 0;
     	int port = 4321;
     	if (args.length > 0) port = Integer.parseInt(args[0]);
 
@@ -68,17 +70,16 @@ public class ServerWithSecurityCP2 {
 				// If the packet is for transferring the filename
 				if (packetType == 0) {
 
-					System.out.println("Receiving file...");
 
 					int numBytes = fromClient.readInt();
 					byte [] filename = new byte[numBytes];
 					// Must use read fully!
 					// See: https://stackoverflow.com/questions/25897627/datainputstream-read-vs-datainputstream-readfully
 					fromClient.readFully(filename, 0, numBytes);
-					Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding"); 
 					aesCipher.init(Cipher.DECRYPT_MODE,AESKey);
-					byte[] decryptedBlock = aesCipher.doFinal(filename);
+					decryptedBlock = aesCipher.doFinal(filename);
 					
+					System.out.println("Receiving " + new String(decryptedBlock, 0, decryptedBlock.length));
 
 					fileOutputStream = new FileOutputStream("recv_"+new String(decryptedBlock, 0, decryptedBlock.length));
 					bufferedFileOutputStream = new BufferedOutputStream(fileOutputStream);
@@ -89,29 +90,26 @@ public class ServerWithSecurityCP2 {
 					int numBytes = fromClient.readInt();
 					byte [] block = new byte[144];
 					fromClient.readFully(block, 0, 144);
-					// System.out.println("Block received: " +new String(block));
-					System.out.println("Block size: "+ block.length);
-
-					Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding"); 
-					aesCipher.init(Cipher.DECRYPT_MODE,AESKey);
-					byte[] decryptedBlock = null;
-
-					count++;
-					System.out.println(count);
 
 					if (numBytes > 0)
+						//LOOKHERE: Decrypt file chunks with symmetric key
 						decryptedBlock = aesCipher.doFinal(block);
 						bufferedFileOutputStream.write(decryptedBlock, 0, numBytes);
 
-					if (numBytes < 128) {
-						System.out.println("Closing connection...");
-
+					if (numBytes< 128 && done < count){
+						done++;
+						System.out.println("file is fully received.");
 						if (bufferedFileOutputStream != null) bufferedFileOutputStream.close();
 						if (bufferedFileOutputStream != null) fileOutputStream.close();
+					}
+					if (numBytes < 128 && count == done) {
+						System.out.println("Closing connection...");
+						toClient.writeInt(4);
 						fromClient.close();
 						toClient.close();
 						connectionSocket.close();
 					}
+					
 				}else if (packetType ==2){
 					int numBytes = fromClient.readInt();
 					byte[] block = new byte[numBytes];
@@ -172,24 +170,22 @@ public class ServerWithSecurityCP2 {
 						}
 					}
 					
-
-
 				}else if (packetType ==3){
 					System.out.println("Receiving AES Key");
 					int numBytes = fromClient.readInt();
 					byte[] block = new byte[numBytes];
 					fromClient.readFully(block, 0, numBytes);
-					//Decrypt the key
+					//LOOKHERE: Decrypt symmetric key with private key
 					Cipher rsaCipher = Cipher.getInstance("RSA"); 
 					rsaCipher.init(Cipher.DECRYPT_MODE, privKey);
 					byte[] decodedBlock = rsaCipher.doFinal(block);
 					// decode the base64 encoded string
-					//String decodedString = Base64.getEncoder().encodeToString(decodedBlock);					
 					AESKey = new SecretKeySpec(decodedBlock,0,decodedBlock.length, "AES");					
 					// rebuild key using SecretKeySpec
-					
-					
-					
+				}
+				else if(packetType == 1234){
+					count = fromClient.readInt();
+					System.out.println("There are " + count + " number of files to receive.");
 				}
 
 			}
