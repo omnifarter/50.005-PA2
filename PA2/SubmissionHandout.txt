@@ -1,0 +1,7 @@
+Step 1: The Authentication Handshake Protocol
+
+Fig. 1  below gives the basis of a possible protocol. However, there’s one problem with the. What is the problem? Explain it in your handout for submission, and give a fix for the problem.
+
+Ans: Trudy can intercept the messages between client and server (man in the middle attack), and relay everything to each other. With this, the client will think that Trudy is the server. As Trudy relays the message M, the client can decrypt it using the server's public key, and send a message to ask for the certificate signed by CA. Trudy intercepts, and sends this message to the server, receiving the signed certificate, and then sending it to the client. With this, the Authentication Handshake is done, and the client thinks Trudy is the server, and will now upload the file to her, allowing Trudy to get her hands on the private information.
+
+Thus, even if the check is succeeded, the client should have to encrypt its upload using the public key of SecServer (Ks+). This is so that if Trudy utilises the man in the middle attack and intercepts the upload, Trudy is unable to decrypt the upload because Trudy would require the private key of SecServer (Ks-), which is known only to SecServer. This ensures that Trudy is unable to gain access to information sent by the client, and also unable to modify or send a fake upload to SecServer.
