@@ -2,6 +2,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -72,6 +73,7 @@ public class ClientWithSecurityCP1{
 			}else if (packetType == 1) {
 				numBytes = fromServer.readInt();
 				byte [] block = new byte[numBytes];
+				// LOOKHERE : Get server.crt from server
 				fromServer.readFully(block, 0, numBytes);
 					if (numBytes > 0){
 						bufferedFileOutputStream.write(block, 0, numBytes);
@@ -87,15 +89,14 @@ public class ClientWithSecurityCP1{
 		}
 
 		// get public key from certificate
-		//does the name need to be dynamic?
 		InputStream fileInputStream = new FileInputStream("recv_example-bd710400-8079-11ea-ae9d-89114163ae84.crt");
 		CertificateFactory certf = CertificateFactory.getInstance("X.509");
 		serverCert =(X509Certificate)(certf.generateCertificate(fileInputStream));
 
-		//verify that this serverCert is indeed from SecServer
+		//LOOKHERE : Verify (and decrypt) the server.crt using CA cert
 		serverCert.verify(CAcert.getPublicKey());
 
-		//extract SecServer's public key
+		//LOOKHERE: Extract server's public key from the certificate
 		pubkey = serverCert.getPublicKey();
 
 		Cipher rsaCipher = Cipher.getInstance("RSA");
@@ -109,17 +110,9 @@ public class ClientWithSecurityCP1{
 
 	}
 	public static void main(String[] args) {
-		int count = 0;
-
-    	String filename = "Homework Set 6.pdf";
-    	if (args.length > 0) filename = args[0];
-
-    	String serverAddress = "localhost";
-    	if (args.length > 1) filename = args[1];
-
-    	int port = 4321;
-    	if (args.length > 2) port = Integer.parseInt(args[2]);
-
+		int count = args.length;
+		String serverAddress = "localhost";
+		int port = 4321;
 		int numBytes = 0;
 		Socket clientSocket = null;
 
@@ -154,49 +147,77 @@ public class ClientWithSecurityCP1{
 			//Handshake Protocol
 			handshake(toServer, fromServer, CAcert);
 
+			//send number of arguments
+			toServer.writeInt(1234);
+			toServer.writeInt(count);
 			// Connect to server
 			System.out.println("Sending file...");
 
 			// Encrypt file with SecServer's public key
 			Cipher rsaCipher = Cipher.getInstance("RSA");
 			rsaCipher.init(Cipher.ENCRYPT_MODE, pubkey);
-			byte[] encryptedBlock = rsaCipher.doFinal(filename.getBytes());
+			String filename = null;
+			byte[] encryptedBlock = null;
+			byte [] fromFileBuffer = new byte[117];
 
-			//send encryptedBlock to SecServer
-			toServer.writeInt(0);
-			toServer.writeInt(encryptedBlock.length);
-			toServer.write(encryptedBlock);
-			//toServer.flush();
+			for (int i = 0; i < args.length; i++) {
 
-			// Open the file
-			fileInputStream = new FileInputStream(filename);
-			bufferedFileInputStream = new BufferedInputStream(fileInputStream);
-
-	        byte [] fromFileBuffer = new byte[117];
-	        // Send the file
-	        for (boolean fileEnded = false; !fileEnded;) {
-				count++;
-				System.out.println(count);
-				//encrypt the file in blocks of 117 bytes
-				numBytes = bufferedFileInputStream.read(fromFileBuffer);
-				encryptedBlock = rsaCipher.doFinal(fromFileBuffer);
-				fileEnded = numBytes < 117;
-				Thread.sleep(1);
-				//System.out.println("Sending Bytes...");
-				toServer.writeInt(1);
-				toServer.writeInt(numBytes);
+				filename = args[i];
+			
+				//LOOKHERE: Encrypt file chunks with server’s public key
+				encryptedBlock = rsaCipher.doFinal(filename.getBytes());
+				
+				//send filename to SecServer
+				toServer.writeInt(0);
+				toServer.writeInt(encryptedBlock.length);
 				toServer.write(encryptedBlock);
-			 	//toServer.flush();
-	
+				//toServer.flush();
+
+				// Open the file
+				fileInputStream = new FileInputStream(filename);
+				bufferedFileInputStream = new BufferedInputStream(fileInputStream);
+
+				// Send the file
+				for (boolean fileEnded = false; !fileEnded;) {
+					//encrypt the file in blocks of 117 bytes
+					numBytes = bufferedFileInputStream.read(fromFileBuffer);
+					encryptedBlock = rsaCipher.doFinal(fromFileBuffer);
+					fileEnded = numBytes < 117;
+					toServer.writeInt(1);
+					toServer.writeInt(numBytes);
+					toServer.write(encryptedBlock);
+					//toServer.flush();
+		
+				}
+				}
+
+			System.out.println("Done transferring all files");
+			bufferedFileInputStream.close();
+			fileInputStream.close();
+			
+
+			try{
+				while (true){
+					int packetType = fromServer.readInt();
+					if (packetType == 4){
+						System.out.println("Closing connection...");
+						//clientSocket.close();
+						break;
+					}
+				}
+			}catch(EOFException e){
+				System.out.println("Closing connection...");
 			}
-	        bufferedFileInputStream.close();
-	        fileInputStream.close();
-
-			System.out.println("Closing connection...");
-
 		} catch (Exception e) {e.printStackTrace();}
 
 		long timeTaken = System.nanoTime() - timeStarted;
 		System.out.println("Program took: " + timeTaken/1000000.0 + "ms to run");
 	}
 }
+
+
+
+
+
+
+

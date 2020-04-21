@@ -32,8 +32,11 @@ public class ServerWithSecurityCP1 {
   	}
 
 	public static void main(String[] args) throws Exception {
-		int counter = 0;
+		Cipher rsaCipher = Cipher.getInstance("RSA"); 
+		byte[] decryptedBlock = null;
 
+		int counter = 0;
+		int done = 0;
 		PrivateKey privKey = getPrivKey("private_key.der");
 		PublicKey pubKey = getPubKey("public_key.der");
 
@@ -61,17 +64,17 @@ public class ServerWithSecurityCP1 {
 				// If the packet is for transferring the filename
 				if (packetType == 0) {
 
-					System.out.println("Receiving file...");
 
 					int numBytes = fromClient.readInt();
 					byte [] filename = new byte[128];
 					// Must use read fully!
 					// See: https://stackoverflow.com/questions/25897627/datainputstream-read-vs-datainputstream-readfully
 					fromClient.readFully(filename, 0, 128);
-					Cipher rsaCipher = Cipher.getInstance("RSA"); 
+					
+					//LOOKHERE: Decrypt file chunks with private key
 					rsaCipher.init(Cipher.DECRYPT_MODE,privKey);
-					byte[] decryptedBlock = rsaCipher.doFinal(filename);
-
+					decryptedBlock = rsaCipher.doFinal(filename);
+					System.out.println("Receiving file "+ new String(decryptedBlock, 0, decryptedBlock.length));
 					fileOutputStream = new FileOutputStream("recv_"+new String(decryptedBlock, 0, decryptedBlock.length));
 					bufferedFileOutputStream = new BufferedOutputStream(fileOutputStream);
 
@@ -81,23 +84,26 @@ public class ServerWithSecurityCP1 {
 					int numBytes = fromClient.readInt();
 					byte [] block = new byte[128];
 					fromClient.readFully(block, 0, 128);
-					
-					Cipher rsaCipher = Cipher.getInstance("RSA"); 
-					rsaCipher.init(Cipher.DECRYPT_MODE,privKey);
-					byte[] decryptedBlock = null;
+
 
 					if(numBytes>0){
 						decryptedBlock = rsaCipher.doFinal(block);
 						bufferedFileOutputStream.write(decryptedBlock, 0, numBytes);
 					}
-					if (numBytes<117) {
-						System.out.println("Closing connection...");
+					if(numBytes<117 && done < counter){
+						done++;
+						System.out.println("file is fully received.");
 						if (bufferedFileOutputStream != null) bufferedFileOutputStream.close();
 						if (bufferedFileOutputStream != null) fileOutputStream.close();
+					}
+					if (done == counter) {
+						System.out.println("Closing connection...");
+						toClient.writeInt(4);
 						fromClient.close();
 						toClient.close();
 						connectionSocket.close();
-					}
+					} 
+					
 
 
 
@@ -109,8 +115,8 @@ public class ServerWithSecurityCP1 {
 					System.out.println("Client says: " + new String(block));
 					
 					
-					Cipher rsaCipher = Cipher.getInstance("RSA"); 
 					rsaCipher.init(Cipher.ENCRYPT_MODE, privKey);
+					//LOOKHERE: Encrypt nonce with private key
 					byte[] encryptedBlock = rsaCipher.doFinal(block);
 					System.out.println("Sending to Client the encrypted nonce. ");
 
@@ -145,6 +151,7 @@ public class ServerWithSecurityCP1 {
 								fileEnded = numBytes < 117;
 								toClient.writeInt(1);
 								toClient.writeInt(numBytes);
+								//LOOKHERE : Sending of server certificate to the client
 								toClient.write(fromFileBuffer);
 								toClient.flush();
 							}
@@ -161,6 +168,11 @@ public class ServerWithSecurityCP1 {
 							break;
 						}
 					}
+				}
+				//getting to know the number of arguments.
+				else if (packetType == 1234){
+					counter = fromClient.readInt();
+					System.out.println("there are " + counter + " number of files to receive.");
 				}
 
 			}
